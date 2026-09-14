@@ -887,15 +887,14 @@
     }, { passive: true });
   }
 
-  /* waitlist: shared db-backed signups */
+  /* waitlist: backed by MongoDB via Vercel serverless function */
   var form = document.getElementById('waitlist-form');
   var emailInput = document.getElementById('waitlist-email');
   var statusEl = document.getElementById('waitlist-status');
   var submitBtn = document.getElementById('waitlist-submit');
   var countEls = [document.getElementById('waitlist-count'), document.getElementById('nav-count')];
 
-  var db = null;
-  var waitlistCol = null;
+  var API_URL = 'https://kindearth-website.vercel.app/api/join';
 
   function setCounts(v){
     countEls.forEach(function(el){ if (el) el.textContent = v; });
@@ -909,24 +908,6 @@
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
   }
 
-  async function init(){
-    try{
-      if (window.claude && typeof window.claude.use === 'function'){
-        db = await window.claude.use('db');
-      }
-    }catch(e){ db = null; }
-
-    if (!db) return;
-
-    waitlistCol = db.collection('waitlist');
-    try{
-      waitlistCol.limit(1000).onSnapshot(
-        function(snap){ setCounts(String(snap.size)); },
-        function(err){ /* leave dash */ }
-      );
-    }catch(e){}
-  }
-
   if (form){
     form.addEventListener('submit', async function(ev){
       ev.preventDefault();
@@ -936,27 +917,31 @@
         setStatus('Hmm, that email is not quite it.');
         return;
       }
-      if (!db || !waitlistCol){
-        setStatus('Signups are not live in this preview. Open the published page to join in.');
-        return;
-      }
 
       submitBtn.disabled = true;
       setStatus('Adding you to the list...');
 
       try{
-        await waitlistCol.add({ email: email, joinedAt: new Date().toISOString() });
-        form.reset();
-        setStatus('You are in. We will hit you up soon.');
+        var res = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email })
+        });
+        var data = await res.json();
+
+        if (!res.ok) {
+          setStatus(data.error || 'Something glitched. Give it another shot.');
+        } else {
+          form.reset();
+          setStatus(data.message || 'You are in. We will hit you up soon.');
+          if (typeof data.count === 'number') setCounts(String(data.count));
+        }
       }catch(err){
-        var code = err && err.code;
-        setStatus(code === 'quota_exceeded' ? 'We are full up for now. Check back soon.' : 'Something glitched. Give it another shot.');
+        setStatus('Something glitched. Give it another shot.');
       }finally{
         submitBtn.disabled = false;
       }
     });
   }
-
-  init();
 })();
 </script>
