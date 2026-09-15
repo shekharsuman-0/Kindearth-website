@@ -1,4 +1,5 @@
 const { MongoClient } = require('mongodb');
+const dns = require('dns').promises;
 
 let cachedClient = null;
 
@@ -10,8 +11,19 @@ async function getClient() {
   return client;
 }
 
+async function domainCanReceiveMail(email) {
+  const domain = email.split('@')[1];
+  if (!domain) return false;
+  try {
+    const records = await dns.resolveMx(domain);
+    return records && records.length > 0;
+  } catch (err) {
+    // NXDOMAIN, ENODATA, timeout etc. all mean "can't verify this domain"
+    return false;
+  }
+}
+
 module.exports = async (req, res) => {
-  // Allow requests from your website
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -31,19 +43,25 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Please provide a valid email address.' });
     }
 
+    const cleanEmail = email.toLowerCase().trim();
+
+    const domainOk = await domainCanReceiveMail(cleanEmail);
+    if (!domainOk) {
+      return res.status(400).json({ error: 'That email domain doesn\'t look like it can receive mail. Double check for typos.' });
+    }
+
     const client = await getClient();
     const db = client.db('kindearth');
     const collection = db.collection('waitlist');
 
-    // avoid duplicate signups
-    const existing = await collection.findOne({ email: email.toLowerCase() });
+    const existing = await collection.findOne({ email: cleanEmail });
     if (existing) {
       const count = await collection.countDocuments();
       return res.status(200).json({ message: 'Already on the list!', count });
     }
 
     await collection.insertOne({
-      email: email.toLowerCase(),
+      email: cleanEmail,
       joinedAt: new Date().toISOString()
     });
 
