@@ -1,5 +1,6 @@
 const { MongoClient } = require('mongodb');
 const dns = require('dns').promises;
+const crypto = require('crypto');
 
 let cachedClient = null;
 
@@ -18,8 +19,39 @@ async function domainCanReceiveMail(email) {
     const records = await dns.resolveMx(domain);
     return records && records.length > 0;
   } catch (err) {
-    // NXDOMAIN, ENODATA, timeout etc. all mean "can't verify this domain"
     return false;
+  }
+}
+
+async function sendConfirmationEmail(email, token, origin) {
+  const confirmUrl = `${origin}/api/confirm?token=${token}`;
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: 'KindEarth <noreply@mail.kindearth.app>',
+      to: email,
+      subject: 'Confirm your spot on the KindEarth waitlist',
+      html: `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+          <h2 style="color:#01472e;">You're almost in.</h2>
+          <p>Click the button below to confirm your spot on the KindEarth waitlist.</p>
+          <p style="margin:32px 0;">
+            <a href="${confirmUrl}" style="background:#01472e; color:#fefae0; padding:14px 28px; border-radius:24px; text-decoration:none; font-weight:bold; display:inline-block;">Confirm my spot</a>
+          </p>
+          <p style="color:#888; font-size:13px;">If you didn't sign up for this, you can safely ignore this email.</p>
+        </div>
+      `
+    })
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error('Failed to send confirmation email: ' + errText);
   }
 }
 
@@ -55,18 +87,31 @@ module.exports = async (req, res) => {
     const collection = db.collection('waitlist');
 
     const existing = await collection.findOne({ email: cleanEmail });
-    if (existing) {
-      const count = await collection.countDocuments();
-      return res.status(200).json({ message: 'Already on the list!', count });
+
+    if (existing && existing.confirmed) {
+      const count = await collection.countDocuments({ confirmed: true });
+      return res.status(200).json({ message: 'Already confirmed, you are on the list!', count });
     }
 
-    await collection.insertOne({
-      email: cleanEmail,
-      joinedAt: new Date().toISOString()
-    });
+    const token = crypto.randomBytes(24).toString('hex');
+    const origin = `https://${req.headers.host}`;
 
-    const count = await collection.countDocuments();
-    return res.status(200).json({ message: 'You are in!', count });
+    if (existing) {
+      // resend a fresh token if they signed up again before confirming
+      await collection.updateOne({ email: cleanEmail }, { $set: { token, tokenCreatedAt: new Date().toISOString() } });
+    } else {
+      await collection.insertOne({
+        email: cleanEmail,
+        confirmed: false,
+        token,
+        joinedAt: new Date().toISOString(),
+        tokenCreatedAt: new Date().toISOString()
+      });
+    }
+
+    await sendConfirmationEmail(cleanEmail, token, origin);
+
+    return res.status(200).json({ message: 'Check your inbox to confirm your spot!' });
 
   } catch (err) {
     console.error(err);

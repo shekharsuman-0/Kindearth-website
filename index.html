@@ -887,18 +887,13 @@
     }, { passive: true });
   }
 
-  /* waitlist: backed by MongoDB via Vercel serverless function */
+  /* waitlist: backed by MongoDB via Vercel serverless function (double opt-in) */
   var form = document.getElementById('waitlist-form');
   var emailInput = document.getElementById('waitlist-email');
   var statusEl = document.getElementById('waitlist-status');
   var submitBtn = document.getElementById('waitlist-submit');
-  var countEls = [document.getElementById('waitlist-count'), document.getElementById('nav-count')];
 
   var API_URL = 'https://kindearth-website.vercel.app/api/join';
-
-  function setCounts(v){
-    countEls.forEach(function(el){ if (el) el.textContent = v; });
-  }
 
   function setStatus(msg){
     statusEl.textContent = msg;
@@ -919,7 +914,7 @@
       }
 
       submitBtn.disabled = true;
-      setStatus('Adding you to the list...');
+      setStatus('Sending...');
 
       try{
         var res = await fetch(API_URL, {
@@ -933,8 +928,7 @@
           setStatus(data.error || 'Something glitched. Give it another shot.');
         } else {
           form.reset();
-          setStatus(data.message || 'You are in. We will hit you up soon.');
-          if (typeof data.count === 'number') setCounts(String(data.count));
+          setStatus(data.message || 'Check your inbox to confirm your spot!');
         }
       }catch(err){
         setStatus('Something glitched. Give it another shot.');
