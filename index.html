@@ -593,6 +593,88 @@
     text-transform:uppercase;
     opacity:0.5;
   }
+  /* ===== Guardian badge upgrade — add this to your existing <style> block ===== */
+  .guardian-icon{
+    width:20px; height:20px;
+    display:block;
+    flex:none;
+  }
+  .guardian-icon path{
+    stroke:currentColor;
+    stroke-width:1.6;
+    fill:none;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  .guardian-icon .leaf-fill{
+    fill:currentColor;
+    stroke:none;
+    opacity:0.9;
+  }
+
+  /* nav pill badge: icon + count, with a soft pulse ring */
+  .nav-badge{
+    position:relative;
+    gap:10px;
+  }
+  .nav-badge .guardian-icon{
+    color:var(--forest);
+  }
+  .nav-badge .count{
+    position:relative;
+  }
+  .nav-badge .count::after{
+    content:"";
+    position:absolute;
+    inset:-3px;
+    border-radius:50%;
+    border:1.5px solid var(--forest);
+    opacity:0;
+    animation:pulseRing 2.6s ease-out infinite;
+  }
+  @keyframes pulseRing{
+    0%{ opacity:0.55; transform:scale(0.9); }
+    70%{ opacity:0; transform:scale(1.55); }
+    100%{ opacity:0; transform:scale(1.55); }
+  }
+  @media (prefers-reduced-motion:reduce){
+    .nav-badge .count::after{ animation:none; }
+  }
+
+  /* footer counter: icon + big number, badge-style chip */
+  .newsletter-count{
+    align-items:center;
+    gap:0.9rem;
+    background:rgba(254,250,224,0.08);
+    border:1px solid rgba(204,213,174,0.3);
+    padding:0.9rem 1.3rem;
+    border-radius:1.4rem;
+    width:fit-content;
+  }
+  .newsletter-count .guardian-icon{
+    width:26px; height:26px;
+    color:var(--sage);
+    flex:none;
+  }
+  .newsletter-count .count-text{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  .newsletter-count .num{
+    font-family:var(--font-display);
+    font-size:1.9rem;
+    color:var(--cream);
+    line-height:1;
+  }
+  .newsletter-count .label{
+    font-size:10px;
+    font-weight:700;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    opacity:0.65;
+    color:var(--sage);
+  }
 </style>
 
 <nav class="nav">
@@ -605,7 +687,7 @@
     <a href="#join">Join in</a>
   </div>
   <a class="nav-badge" href="#join">
-    Guardians <span class="count tabular" id="nav-count">–</span>
+    Guardians – <span class="count tabular" id="nav-count">–</span>
   </a>
 </nav>
 
@@ -798,7 +880,7 @@
         <p class="newsletter-status" id="waitlist-status" role="status" aria-live="polite"></p>
         <div class="newsletter-count">
           <span class="num tabular" id="waitlist-count">–</span>
-          <span class="label">guardians already in</span>
+          <span class="label">– guardians already in</span>
         </div>
       </div>
       <div class="footer-cols" data-reveal>
@@ -892,8 +974,10 @@
   var emailInput = document.getElementById('waitlist-email');
   var statusEl = document.getElementById('waitlist-status');
   var submitBtn = document.getElementById('waitlist-submit');
+  var countEls = [document.getElementById('waitlist-count'), document.getElementById('nav-count')];
 
   var API_URL = 'https://kindearth-website.vercel.app/api/join';
+  var COUNT_URL = 'https://kindearth-website.vercel.app/api/count';
 
   function setStatus(msg){
     statusEl.textContent = msg;
@@ -901,6 +985,32 @@
 
   function isValidEmail(v){
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  }
+
+  function animateCount(el, target){
+    var start = 0;
+    var duration = 900;
+    var startTime = null;
+    function step(ts){
+      if (!startTime) startTime = ts;
+      var progress = Math.min((ts - startTime) / duration, 1);
+      var eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = String(Math.round(start + (target - start) * eased));
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  async function loadCount(){
+    try{
+      var res = await fetch(COUNT_URL);
+      var data = await res.json();
+      if (typeof data.count === 'number'){
+        countEls.forEach(function(el){ if (el) animateCount(el, data.count); });
+      }
+    }catch(err){
+      countEls.forEach(function(el){ if (el) el.textContent = '0'; });
+    }
   }
 
   if (form){
@@ -937,5 +1047,7 @@
       }
     });
   }
+
+  loadCount();
 })();
 </script>
